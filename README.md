@@ -10,7 +10,7 @@ This project focuses on the difference between reusable creator knowledge, techn
 
 The dataset uses public examples from r/StableDiffusion, a Reddit community focused on Stable Diffusion, ComfyUI, open-source/local AI image generation, model releases, workflows, and related creator tools.
 
-I chose this community because it connects directly to generative AI creator workflows and AI content creation. The community has several recurring types of discourse: people share workflows, ask for technical help, discuss new models and licensing, and post showcases or reactions.
+I chose this community because it connects directly to generative AI creator workflows and AI content creation. The community has several recurring types of discourse: people share workflows, ask for technical help, discuss new models and licensing, and post showcases or reactions. That made it a good fit for TakeMeter because the community naturally contains several different discourse roles instead of only one type of post.
 
 ## Labels
 
@@ -25,12 +25,12 @@ I used four mutually exclusive labels.
 
 ## Label Examples
 
-| Example text | Label |
-|---|---|
-| "I made a visual Ideogram 4 prompt editor with JSON generation by LLM and vision." | `workflow_resource` |
-| "What models and workflows can generate an image in 5s?" | `technical_help` |
-| "Ideogram 4 is a great model, but the license is very restrictive." | `model_news_discussion` |
-| "It is still nuts to me how realistic AI is getting." | `showcase_reaction` |
+| Label | Example 1 | Example 2 |
+|---|---|---|
+| `workflow_resource` | "I made a visual Ideogram 4 prompt editor with JSON generation by LLM and vision." | "Subject first, then style, then scene, with lighting and camera last." |
+| `technical_help` | "What models and workflows can generate an image in 5s?" | "ComfyUI keeps failing when a checkpoint loads; is this VRAM or a missing custom node?" |
+| `model_news_discussion` | "Ideogram 4 is a great model, but the license is very restrictive." | "Replies to the Monet post were confidently wrong about whether it was AI." |
+| `showcase_reaction` | "It is still nuts to me how realistic AI is getting." | "Anima-Base is magic and I don't think people realize how good it is." |
 
 ## Dataset
 
@@ -51,7 +51,7 @@ The label distribution is balanced:
 | `model_news_discussion` | 50 |
 | `showcase_reaction` | 50 |
 
-I intentionally kept the classes balanced so that the model would not learn to predict only the majority class.
+I intentionally kept the classes balanced so that the model would not learn to predict only the majority class. No single label accounts for more than 25% of the dataset.
 
 ## Data Collection and Annotation Process
 
@@ -63,6 +63,15 @@ The hardest part was deciding how to label short or title-like examples. Many po
 - If the text asks how to solve or configure something, label it `technical_help`.
 - If the text is mainly about a model/tool release, license, commercial use, or broader community issue, label it `model_news_discussion`.
 - If the text is mostly a reaction, showcase, joke, or hype statement, label it `showcase_reaction`.
+
+## Difficult Labeling Decisions
+
+| Text | Final Label | Why This Was Difficult | Decision |
+|---|---|---|---|
+| "I'm looking for local models and workflows that can generate images in under five seconds on average CPU." | `technical_help` | It contains the words "models" and "workflows," which sound like resource-sharing language. | I labeled it `technical_help` because the intent is asking for recommendations, not providing a reusable workflow. |
+| "Big update to the LTX Trainer: One framework, many conditioning modes." | `model_news_discussion` | It could be treated as a resource because it names a tool/framework. | I labeled it `model_news_discussion` because the main purpose is announcing/discussing a tool update rather than teaching a specific reusable workflow. |
+| "Subject first, then style, then scene, with lighting and camera last." | `workflow_resource` | It is short and does not explicitly say "tutorial" or "workflow." | I labeled it `workflow_resource` because it gives a repeatable prompt-ordering rule that another creator can apply. |
+| "Ideogram 4 can produce great stuff sometimes." | `showcase_reaction` | It names a specific model, which could make it look like model discussion. | I labeled it `showcase_reaction` because it is mostly a vague reaction and does not discuss release details, licensing, or broader implications. |
 
 ## Model and Training Setup
 
@@ -80,7 +89,7 @@ The dataset was split approximately as:
 
 The final test set contained 30 examples.
 
-The training setup used the starter Colab notebook with default hyperparameters:
+The training setup used the starter Colab notebook with the following hyperparameters:
 
 | Hyperparameter | Value |
 |---|---:|
@@ -91,11 +100,28 @@ The training setup used the starter Colab notebook with default hyperparameters:
 | Weight decay | 0.01 |
 | Model | `distilbert-base-uncased` |
 
+I kept the default 3 epochs, learning rate 2e-5, and batch size 16 because the dataset was small. My goal was to run a stable fine-tuning experiment without over-tuning hyperparameters to a tiny validation set. Three epochs is enough for the model to adapt to the labels, but not so many that I would intentionally overfit the 200 examples.
+
 ## Baseline Model
 
 The baseline was a zero-shot Groq/Llama classifier. The prompt included the community description, the four label definitions, examples for each label, and decision rules. The model was instructed to return only one valid label name.
 
-The baseline was evaluated on the same 30-example test set as the fine-tuned DistilBERT model.
+The baseline was evaluated on the same 30-example test set as the fine-tuned DistilBERT model. I collected the baseline results by running the same test examples through the prompt-based classifier and parsing the returned label names.
+
+The baseline prompt used this structure:
+
+```text
+You are classifying posts/comments from r/StableDiffusion.
+Assign each post to exactly one of the following four labels:
+workflow_resource, technical_help, model_news_discussion, showcase_reaction.
+[Definitions and examples for each label]
+Decision rules:
+- If the text gives reusable process or resource details, choose workflow_resource.
+- If the text asks how to fix or do something technical, choose technical_help.
+- If the text is mainly about model releases, licensing, commercial use, platform rules, or broader AI community debate, choose model_news_discussion.
+- If the text is mostly a reaction, showcase, joke, or vague hype, choose showcase_reaction.
+Respond with ONLY one label name.
+```
 
 ## Results
 
@@ -140,6 +166,18 @@ The confusion matrix below shows the fine-tuned DistilBERT model's predictions o
 
 The most important pattern is that the fine-tuned model never correctly predicted `model_news_discussion`. It also over-predicted `technical_help`, especially for true `workflow_resource` and `model_news_discussion` examples.
 
+## Sample Classifications from the Fine-Tuned Model
+
+These examples are written out as text so the predicted label and confidence are visible without relying on screenshots.
+
+| Text | True Label | Fine-Tuned Prediction | Confidence | Result | Explanation |
+|---|---|---|---:|---|---|
+| "ComfyUI keeps failing when a checkpoint loads; is this VRAM or a missing custom node?" | `technical_help` | `technical_help` | 0.28 | Correct | This is reasonable because the post directly asks for troubleshooting help around a checkpoint error. |
+| "Anima-Base is magic and I don't think people realize how good it is." | `showcase_reaction` | `showcase_reaction` | 0.27 | Correct | This is mostly a hype/reaction post, not a workflow or help request. |
+| "I made a visual Ideogram 4 prompt editor with JSON generation by LLM and vision." | `workflow_resource` | `technical_help` | 0.27 | Incorrect | The model likely focused on technical words instead of recognizing the post as a shared tool/resource. |
+| "Replies to the Monet post were confidently wrong about whether it was AI." | `model_news_discussion` | `workflow_resource` | 0.26 | Incorrect | This is broader AI art discourse, but it lacks clear model-news keywords. |
+| "Subject first, then style, then scene, with lighting and camera last." | `workflow_resource` | `showcase_reaction` | 0.27 | Incorrect | The post gives a reusable prompting rule, but it is short and lacks obvious workflow markers. |
+
 ## Error Analysis
 
 The fine-tuned DistilBERT model made 20 incorrect predictions out of 30 test examples. Many errors came from short examples where the text did not contain enough context for a small fine-tuned model to infer the label boundary.
@@ -153,7 +191,8 @@ I made a visual Ideogram 4 prompt editor with JSON generation by LLM and vision.
 ```
 
 True label: `workflow_resource`  
-Predicted label: `technical_help`
+Predicted label: `technical_help`  
+Confidence: 0.27
 
 Analysis: The example describes a tool/resource, but the model likely focused on technical words like "prompt editor," "JSON," and "LLM," which often appear in help requests. The model did not learn the difference between sharing a tool and asking for help with a tool.
 
@@ -166,7 +205,8 @@ I'm looking for local models and workflows that can generate images in under fiv
 ```
 
 True label: `technical_help`  
-Predicted label: `workflow_resource`
+Predicted label: `workflow_resource`  
+Confidence: 0.27
 
 Analysis: The text asks for a recommendation, so it should be `technical_help`. The model likely focused on the words "models" and "workflows," which are common in resource-sharing examples.
 
@@ -179,7 +219,8 @@ Replies to the Monet post were confidently wrong about whether it was AI.
 ```
 
 True label: `model_news_discussion`  
-Predicted label: `workflow_resource`
+Predicted label: `workflow_resource`  
+Confidence: 0.26
 
 Analysis: This is a broader AI art/community discussion, but it lacks obvious keywords like "license," "release," or "model." The model had trouble recognizing community discourse when it did not contain explicit model-news vocabulary.
 
@@ -192,7 +233,8 @@ Ideogram 4 can produce great stuff sometimes.
 ```
 
 True label: `showcase_reaction`  
-Predicted label: `workflow_resource`
+Predicted label: `workflow_resource`  
+Confidence: 0.27
 
 Analysis: The text is a vague reaction to model output. The model may have over-associated the model name "Ideogram 4" with workflow/resource content.
 
@@ -205,9 +247,20 @@ Subject first, then style, then scene, with lighting and camera last.
 ```
 
 True label: `workflow_resource`  
-Predicted label: `showcase_reaction`
+Predicted label: `showcase_reaction`  
+Confidence: 0.27
 
 Analysis: This is a practical prompt-ordering rule, so it is a workflow/resource example. However, because it is short and lacks explicit words like "workflow," "tutorial," or "settings," the model treated it as a low-context reaction.
+
+## Error Pattern Analysis
+
+The systematic error pattern was not simply "the model is bad." The model confused labels that share the same surface vocabulary. The most consistent boundary problems were:
+
+1. **`workflow_resource` vs. `technical_help`**: Posts with words like "workflow," "model," "prompt," or "tool" were hard to classify because those words appear in both shared resources and help requests.
+2. **`model_news_discussion` vs. `workflow_resource`**: Posts about model/tool updates were often pushed into resource/help categories because they named specific models or tools.
+3. **Short low-context examples**: Very short titles or comments did not provide enough structure for DistilBERT to infer intent.
+
+The strongest supporting evidence is `model_news_discussion` having 0.00 recall and 0.00 F1. This means the fine-tuned model never successfully learned that class on the test set.
 
 ## What the Model Learned vs. What I Intended
 
@@ -227,16 +280,6 @@ There are several likely causes:
 4. **Weak context for model news**: `model_news_discussion` sometimes required broader community context that was not obvious from the text alone.
 5. **Strong baseline**: The Groq/Llama baseline had access to detailed label definitions and stronger general reasoning.
 
-## Sample Classification Table
-
-| Text | True Label | Fine-tuned Prediction | Result |
-|---|---|---|---|
-| "ComfyUI keeps failing when a checkpoint loads; is this VRAM or a missing custom node?" | `technical_help` | `technical_help` | Correct |
-| "Anima-Base is magic and I don't think people realize how good it is." | `showcase_reaction` | `showcase_reaction` | Correct |
-| "I made a visual Ideogram 4 prompt editor with JSON generation by LLM and vision." | `workflow_resource` | `technical_help` | Incorrect |
-| "Replies to the Monet post were confidently wrong about whether it was AI." | `model_news_discussion` | `workflow_resource` | Incorrect |
-| "Subject first, then style, then scene, with lighting and camera last." | `workflow_resource` | `showcase_reaction` | Incorrect |
-
 ## Reflection
 
 The biggest lesson from this project is that label design matters as much as the model. The taxonomy made sense to me as a human annotator, but several labels shared the same vocabulary. For example, model names, workflow names, and tool names appeared in multiple classes. That made the task harder for a small fine-tuned model.
@@ -247,7 +290,9 @@ If I improved this project, I would collect more examples, include post body tex
 
 ## Spec Reflection
 
-The planning document helped force early decisions about the community, labels, edge cases, and evaluation criteria. The main place my implementation diverged from the original intention was in the final model performance: I expected fine-tuning to improve over the baseline, but it performed significantly worse. That made the evaluation more valuable because it revealed weaknesses in the dataset and taxonomy.
+The planning document helped force early decisions about the community, labels, edge cases, and evaluation criteria. Specifically, it made me define what "good enough" performance meant before seeing results, and it made me think about edge cases like short posts and model/tool update posts.
+
+The main place my implementation diverged from the original intention was in the final model performance: I expected fine-tuning to improve over the baseline, but it performed significantly worse. Instead of hiding that, I treated it as the main evaluation finding. The divergence happened because the dataset was small, many examples were short, and several labels shared the same AI-tool vocabulary.
 
 ## AI Usage
 
@@ -255,9 +300,10 @@ I used AI assistance to help design the label taxonomy, draft the planning docum
 
 Specific AI usage examples:
 
-1. I asked for help refining label definitions after choosing r/StableDiffusion as the community.
-2. I used AI assistance to identify likely failure modes from the wrong predictions, such as short examples and overlap between `workflow_resource` and `technical_help`.
-3. I used AI assistance to turn the evaluation metrics into a readable README report.
+1. **Label stress-testing**: I asked an AI tool to help refine the four-label taxonomy after choosing r/StableDiffusion. I revised the labels to make them more specific and to avoid vague categories like "good" or "bad."
+2. **Annotation assistance**: I used AI help to organize an initial set of labeled examples. I reviewed the label definitions and made labeling decisions based on the intended discourse role of each example.
+3. **Failure pattern analysis**: After getting wrong predictions from the fine-tuned model, I used AI to identify likely failure patterns such as short examples, overlapping vocabulary, and confusion between `workflow_resource`, `technical_help`, and `model_news_discussion`. I then checked those patterns against the confusion matrix and wrong predictions.
+4. **Report drafting**: I used AI assistance to turn the metrics and error analysis into a readable README. I revised the language to be honest about the fine-tuned model underperforming instead of claiming it worked better than it did.
 
 ## Files
 
@@ -268,6 +314,7 @@ Specific AI usage examples:
 | `evaluation_results.json` | Exported evaluation summary from the Colab notebook. |
 | `results/confusion_matrix.svg` | Fine-tuned model confusion matrix visualization. |
 | `README.md` | Final project report and evaluation writeup. |
+| Completed Colab notebook | Fine-tuning and evaluation notebook committed to the repo. |
 
 ## Demo Video Notes
 
@@ -275,8 +322,8 @@ The demo video should show:
 
 1. The GitHub repo and dataset.
 2. The four labels and what they mean.
-3. The Colab notebook running classification.
-4. At least one correct prediction.
-5. At least one incorrect prediction.
+3. The Colab notebook running or showing 3-5 fine-tuned predictions with label and confidence visible.
+4. At least one correct prediction, with an explanation of why it is reasonable.
+5. At least one incorrect prediction, with an explanation of what went wrong.
 6. The results comparison showing the zero-shot baseline outperforming the fine-tuned model.
 7. The confusion matrix and failure analysis.
